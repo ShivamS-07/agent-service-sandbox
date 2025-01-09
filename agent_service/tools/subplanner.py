@@ -5,6 +5,8 @@ import uuid
 from copy import deepcopy
 from typing import Any, Dict, Optional, Tuple, cast
 
+import numpy as np
+
 from agent_service.io_type_utils import IOType, TableColumnType
 from agent_service.io_types.stock import StockID
 from agent_service.io_types.table import StockTable, Table, TableColumn, TableColumnMetadata
@@ -15,7 +17,7 @@ from agent_service.planner.sub_plan_executor import run_plan_simple
 from agent_service.tool import TOOL_DEBUG_INFO, ToolArgs, ToolCategory, tool
 from agent_service.tools.tables import JoinTableArgs, join_tables
 from agent_service.tools.tool_log import tool_log
-from agent_service.types import AgentUserSettings, PlanRunContext
+from agent_service.types import AgentUserSettings, ChatContext, Message, PlanRunContext
 from agent_service.utils.async_utils import gather_with_concurrency
 from agent_service.utils.feature_flags import get_ld_flag
 from agent_service.utils.output_utils.output_construction import (
@@ -55,8 +57,19 @@ def _string_for_hashing(val: Any) -> str:
         return str(val)
 
 
+def get_inputs_str(row: dict[str, IOType]) -> str:
+    return "Inputs:\n" + "\n".join(f"{key} = {value}" for key, value in row.items()) + "\n"
+
+
+def get_subplan_chat_context(directions: str, row: dict[str, IOType]) -> ChatContext:
+    return ChatContext(
+        messages=[Message(is_user_message=True, message=f"{get_inputs_str(row)}{directions}")]
+    )
+
+
 def instantiate_subplan_with_task_ids(
-    plan: ExecutionPlan, row: dict[str, IOType]
+    plan: ExecutionPlan,
+    row: dict[str, IOType],
 ) -> Tuple[ExecutionPlan, Dict[str, Dict[str, IOType]]]:
     row_plan = deepcopy(plan)
     task_id_mapping = {}
@@ -71,6 +84,10 @@ def instantiate_subplan_with_task_ids(
         step.tool_task_id = new_task_id
         if step.tool_name in FIRST_PASS_TOOLS:
             task_id_mapping[new_task_id] = {"template_task_id": org_task_id}
+        if step.tool_name == "summarize_texts":
+            task_id_mapping[new_task_id] = {
+                "plan_str": get_inputs_str(row) + plan.get_formatted_plan(numbered=True)
+            }
     return row_plan, task_id_mapping  # type: ignore
 
 
@@ -162,6 +179,15 @@ async def convert_per_row_results_to_table(
     return new_table
 
 
+def pick_row_idx_for_initial_run(table: Table) -> int:
+    date_column = table.get_date_column()
+    if not date_column:
+        return 0  # just return the first
+
+    # get the oldest date, most sensible for using update logic
+    return np.argmin(date_column.data)  # type: ignore
+
+
 def subplanner_enabled(user_id: Optional[str], user_settings: Optional[AgentUserSettings]) -> bool:
     result = get_ld_flag("table-subplanner-enabled", default=False, user_context=user_id)
     return result
@@ -212,8 +238,9 @@ you have all the information from the table fully on-hand and refer to such info
 to create your output(s).
 be done on that information
 3. Your description must only discuss the operations needed for a single row, you must NEVER discuss
-the main iteration of this tool in your description. You must avoid words such as 'each' or 'every' unless
-there is some kind of iteration that is happening as part of the processing for a single row.
+the main iteration of this tool in your description in any way. You never use words such as 'each' or
+'every' in your description unless there is some kind of iteration that is happening as part of the
+processing for a single row. In cases where you would use 'each' or 'every, instead say 'the provided'!
 4. You should not output what is already in the input table. 
 5. Do not include in your description any mention of what the items in the table you are processing
 mean, where they came from, unless absolutely required for the processing you are doing.
@@ -228,9 +255,12 @@ any operations at the level of the table!). Although you should not name the too
 your description readable (your description must be comprehensible to non-coders, no function names)
 you must always make sure there is some plausible tool in your full list of tools that could be applied
 to accomplish every operation you mention.
-7. Your last step must always involve explicitly outputting at least one item that will become the new
-cell (or cells) of the table.
-It should always be of the form 'Output the X'.
+7. Your last step must always involve explicitly outputting the item (or items) that will become the new
+cell (or cells) of the table. If the user is asking for multiple columns added to the table, you must
+have a separate output sentence for each column requested. An output sentence should always be of the form
+'Output the X', where X is the contents of a single column. For example, if the user asks for two
+columns, one with a price change, one with a summary, you would finish your description by saying 
+'Output the price change. Output the summary. Again, never, ever mention cells or columns!'
 
 The per row outputs can be of any type (including tables themselves), this tool will convert automatically
 convert them, in aggregate, to a valid table column.
@@ -302,11 +332,13 @@ async def per_row_processing(args: PerRowProcessingArgs, context: PlanRunContext
         rows = table.iterate_over_rows(use_variables=True)
 
         if any([step.tool_name in FIRST_PASS_TOOLS for step in subplan_template.nodes]):
+            row = rows[pick_row_idx_for_initial_run(table)]
             logger.info("Doing initial run to get individual tool templates")
-            # just grab first row and run it
-            await run_plan_simple(
-                subplan_template, deepcopy(sub_plan_context), variable_lookup=rows[0]
-            )
+
+            inst_sub_plan_context = deepcopy(sub_plan_context)
+            inst_sub_plan_context.chat = get_subplan_chat_context(args.per_row_operations, row)
+
+            await run_plan_simple(subplan_template, inst_sub_plan_context, variable_lookup=row)
 
             logger.info("Finished initial run")
 
@@ -320,10 +352,13 @@ async def per_row_processing(args: PerRowProcessingArgs, context: PlanRunContext
     for row in rows:
         per_row_subplan, task_id_args = instantiate_subplan_with_task_ids(subplan_template, row)
 
+        inst_sub_plan_context = deepcopy(sub_plan_context)
+        inst_sub_plan_context.chat = get_subplan_chat_context(args.per_row_operations, row)
+
         tasks.append(
             run_plan_simple(
                 per_row_subplan,
-                deepcopy(sub_plan_context),
+                inst_sub_plan_context,
                 variable_lookup=row,
                 supplemental_args=task_id_args,
             )

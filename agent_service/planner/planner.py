@@ -840,6 +840,8 @@ class Planner:
         if llm is None:
             llm = self.fast_llm
 
+        logger = get_prefect_logger(__name__)
+
         plan_str = await self._query_GPT_for_new_subplan(
             directions,
             variables,
@@ -847,9 +849,15 @@ class Planner:
             filter_tools=filter_tools,
         )
 
-        # for now, just let the tool fail if the parse fails
-        steps = self._parse_plan_str(plan_str)
-        plan = self._validate_and_construct_plan(steps, variable_lookup=variables)
+        try:
+            steps = self._parse_plan_str(plan_str)
+            plan = self._validate_and_construct_plan(steps, variable_lookup=variables)
+        except ExecutionPlanParsingError as e:
+            logger.warning(
+                f"Failed to validate subplan with original LLM output string:\n{plan_str}"
+                f"\nException: {e}"
+            )
+            return None
         return plan
 
     async def _query_GPT_for_initial_plan(

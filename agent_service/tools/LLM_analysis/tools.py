@@ -116,6 +116,7 @@ class SummarizeTextInput(ToolArgs):
     summarize_brainstorm_instruction: str = SUMMARIZE_BRAINSTORM_INSTRUCTIONS_STR_DEFAULT
     topic_phrase: str = TOPIC_PHRASE_STR_DEFAULT
     stock_phrase: str = STOCK_PHRASE_STR_DEFAULT
+    plan_str: Optional[str] = None
 
     # tool arguments metadata
     arg_metadata = {
@@ -124,6 +125,7 @@ class SummarizeTextInput(ToolArgs):
         "summarize_brainstorm_instruction": ToolArgMetadata(hidden_from_planner=True),
         "topic_phrase": ToolArgMetadata(hidden_from_planner=True),
         "stock_phrase": ToolArgMetadata(hidden_from_planner=True),
+        "plan_str": ToolArgMetadata(hidden_from_planner=True),
     }
 
 
@@ -587,6 +589,7 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
                     all_old_citations,
                     get_original_cite_count(remaining_citations),
                     topic_filter=topic_filter,
+                    plan_str=args.plan_str,
                 )
             else:
                 if remaining_citations:  # output old summary
@@ -613,7 +616,7 @@ async def summarize_texts(args: SummarizeTextInput, context: PlanRunContext) -> 
 
     if text is None:
         text, citations = await _initial_summarize_helper(
-            args, context, llm, topic_filter=topic_filter
+            args, context, llm, topic_filter=topic_filter, plan_str=args.plan_str
         )
 
     summary: Text = Text(val=text)
