@@ -4,7 +4,7 @@ from typing import List, Optional
 
 from agent_service.io_types.dates import DateRange
 from agent_service.io_types.stock import StockID
-from agent_service.io_types.text import StockText
+from agent_service.io_types.text import StockEarningsText, StockText
 from agent_service.tool import ToolArgs, ToolCategory, default_tool_registry, tool
 from agent_service.tools.custom_documents import (
     GetCustomDocsInput,
@@ -94,8 +94,10 @@ async def get_default_text_data_for_stocks(
     stock_ids = args.stock_ids
     logger = get_prefect_logger(__name__)
     all_data: List[StockText] = []
+    using_default_date_range = False
 
     if not args.date_range:
+        using_default_date_range = True
         today = context.as_of_date.date() if context.as_of_date else datetime.date.today()
         start_date = today - datetime.timedelta(days=90)
         # Add an extra day to be sure we don't miss anything with timezone weirdness
@@ -156,10 +158,31 @@ async def get_default_text_data_for_stocks(
 
     async def _get_earnings_call_summaries() -> None:
         try:
-            earnings_data = await get_earnings_call_summaries(
-                GetEarningsCallDataInput(stock_ids=stock_ids, date_range=args.date_range),
-                context=context,
-            )
+            earnings_data: List[StockEarningsText] = []
+            if using_default_date_range:
+                # Grab the latest earnings provided they are not older than a year
+                earnings_data_unfiltered: List[
+                    StockEarningsText
+                ] = await get_earnings_call_summaries(
+                    GetEarningsCallDataInput(stock_ids=stock_ids),
+                    context=context,
+                )  # type: ignore
+                date_cutoff = datetime.date.today() - datetime.timedelta(days=365)
+
+                logger.info(
+                    "Filtering earnings texts to those that happened within a year "
+                    f"(earning calls after {date_cutoff.strftime("%Y-%m-%d")})"
+                )
+
+                for data in earnings_data_unfiltered:
+                    if data.timestamp and data.timestamp.date() > date_cutoff:
+                        earnings_data.append(data)
+
+            else:
+                earnings_data = await get_earnings_call_summaries(
+                    GetEarningsCallDataInput(stock_ids=stock_ids, date_range=args.date_range),
+                    context=context,
+                )  # type: ignore
             all_data.extend(earnings_data)  # type: ignore
         except Exception as e:
             logger.exception(f"failed to get earnings summaries due to error: {e}")

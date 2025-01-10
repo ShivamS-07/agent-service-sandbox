@@ -203,7 +203,6 @@ async def _get_earnings_summary_helper(
                 )
             ).earnings_event_info
         )
-
     # Create a lookup for gbi_ids and the year-quarter earnings they should have along with the associated event
     all_earning_fiscal_quarters = defaultdict(set)
     earning_events_lookup: Dict[int, Any] = defaultdict(dict)
@@ -598,6 +597,9 @@ async def get_earnings_call_full_transcripts(
             args.date_range, single_stock, context
         )
     else:
+        await tool_log(
+            log="Retrieving latest available earnings call data for each company", context=context
+        )
         start_date = None
         end_date = None
         fiscal_quarters = None
@@ -712,6 +714,9 @@ async def get_earnings_call_summaries(
             args.date_range, single_stock, context
         )
     else:
+        await tool_log(
+            log="Retrieving latest available earnings call data for each company", context=context
+        )
         start_date = None
         end_date = None
         fiscal_quarters = None
