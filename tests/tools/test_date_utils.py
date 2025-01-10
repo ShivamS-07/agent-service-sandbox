@@ -98,15 +98,25 @@ class TestDateUtils(IsolatedAsyncioTestCase):
             with self.subTest(start_date=start_date, end_date=end_date):
                 res = is_valid_quarter_range(start_date, end_date)
                 self.assertEqual(res, expected)
-    
-    async def test_get_quarters_for_time_range_invalid_range(self):
-        start_date = datetime.date(2023, 1, 1)
-        invalid_end_date = datetime.date(2023, 3, 30)
-        res = get_quarters_for_time_range(start_date, invalid_end_date)
-        self.assertEqual(res, [])
-    
-    async def test_get_quarters_for_time_range_valid_range(self):
-        start_date = datetime.date(2023, 1, 1)
-        end_date = datetime.date(2024, 3, 31)
-        res = get_quarters_for_time_range(start_date, end_date)
-        self.assertEqual(res, ["2023Q1", "2023Q2", "2023Q3", "2023Q4", "2024Q1"])
+
+    async def test_get_quarters_for_time_range(self):
+        test_cases = [
+            {
+                "name": "invalid_range",
+                "start_date": datetime.date(2023, 1, 1),
+                "end_date": datetime.date(2023, 3, 30), 
+                "expected": []
+            },
+            {
+                "name": "valid_range",
+                "start_date": datetime.date(2023, 1, 1),
+                "end_date": datetime.date(2024, 3, 31),
+                "expected": ["2023Q1", "2023Q2", "2023Q3", "2023Q4", "2024Q1"]
+            }
+        ]
+
+        for case in test_cases:
+            with self.subTest(case["name"]):
+                res = get_quarters_for_time_range(case["start_date"], case["end_date"])
+                self.assertEqual(res, case["expected"])
+
